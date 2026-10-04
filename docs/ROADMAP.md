@@ -20,31 +20,44 @@ purely for Phase 3's RAG ingestion — never required to use JobPilot. Postgres
 schema (users, resumes, applications) via Alembic, basic LangChain `/chat`
 gated by the Redis token-bucket rate limiter, cache-aside `/jobs` (mock data
 until Phase 4). *(Reworked from the original GitHub-only login — see
-`docs/DESIGN_DECISIONS.md`, "Auth model" — not yet re-verified against a live
-DB.)*
+`docs/DESIGN_DECISIONS.md`, "Auth model" — re-verified against a live DB:
+register/login/me all tested end-to-end.)*
 
-## 🔜 Phase 2 — Graph & multi-agent supervisor
-Rebuild the chatbot as a LangGraph `StateGraph`; conditional edges on resume
-quality. Supervisor + Resume / Cover Letter / Interview Prep agents —
-Interview Prep parallel, Cover Letter sequential after Resume. A
-drafter→reviewer critique-and-revise pass after each draft (borrowed from
-`ai-job-search`'s `/apply` pipeline — see `docs/DESIGN_DECISIONS.md`).
-Cross-session memory + checkpointing in Postgres; human-in-the-loop approval
-step. **Ship v0.3.**
+## ✅ Phase 2 — Graph & multi-agent supervisor
+Rebuilt the chatbot as a LangGraph `StateGraph` (`app/graph/graph.py`). The
+Prepare pipeline is a second, separate graph (`prepare_graph.py`): a
+resume-quality gate (conditional edge — the roadmap's "no supervisor" item
+turned out not to need one; see `docs/PHASE_2_PLAN.md` for why), real
+Resume/Cover Letter agents (sequential), Interview Prep's curriculum
+generation running in parallel with them (the *conversational* half of
+Interview Prep stayed a separate, checkpointed graph — it can't join a
+fan-in the way a one-shot task can), a drafter→reviewer critique-and-revise
+pass (borrowed from `ai-job-search`), and a real human-in-the-loop
+`interrupt()`/resume gate on the reviewer's proposed revision. Cross-session
+Postgres checkpointing covers both graphs. Full chunk-by-chunk build log,
+including the three places the original roadmap wording didn't survive
+contact with the actual design, lives in `docs/PHASE_2_PLAN.md`. **v0.3.**
 
 > Soft checkpoint: a multi-agent system with real auth and persisted state is
 > already a legitimate interview story. No deadline forces starting to apply
 > here, but the option is open — no need to wait for Phase 10.
 
-## ⬜ Phase 3 — RAG: resume + GitHub
-Chunk + embed resume/portfolio (works standalone — RAG doesn't require
-GitHub). If the user has connected GitHub via `/auth/github/connect`,
-ingestion layers in: metadata → manifest file → README (if it has real
-content) → optionally a selective code slice (see
-`docs/DESIGN_DECISIONS.md`'s ingestion-strategy note — don't just do
-README-only). Chroma vector store, hybrid search (BM25 + dense), agentic RAG,
-basic RAGAS-style eval. Stretch: same retrieval on pgvector, compare.
-**Ship v0.4.**
+## 🔜 Phase 3 — RAG: resume + GitHub
+**Scope cut down on inspection** — see `docs/PHASE_3_PLAN.md`. GitHub
+ingestion deferred (explicit call). Resume-only RAG turned out to have no
+real job to do either: a single resume is 5-15 chunks against a 1M-token
+context window — dumping it whole (today's approach) costs nothing and
+loses no signal, where retrieval over something this small could only drop
+real information. Chunking/embeddings/vector store deferred alongside
+GitHub, to be built together once an actual corpus justifies them. What's
+real right now: `POST /resumes` — closing the manual-SQL-insert gap used
+throughout Phase 2's testing. When RAG is eventually built: pgvector (not
+Chroma — already run Postgres, nowhere near the scale where a dedicated
+vector DB earns its keep), Gemini embeddings (same provider as generation),
+structure-aware chunking (one chunk per resume section/job entry, not
+fixed-size windows). Hybrid search and "agentic RAG" are further out
+still — they solve problems that only appear once plain dense retrieval is
+real and already insufficient.
 
 ## ⬜ Phase 4 — Job Worker: ingestion, Mongo, resilience, Saga
 Celery + RabbitMQ pipeline; daily job-search agent (Adzuna/RemoteOK/

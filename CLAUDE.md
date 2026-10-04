@@ -60,16 +60,26 @@ store (Chroma) and S3 arrive in Phase 3/7.
 
 ## Current status
 
-Phase 0 (scaffold) and Phase 1 (Agent Core v1: email+password + Google auth
-with GitHub as an optional connect-later flow, Postgres schema, basic
-LangChain chat, cache-aside `/jobs`, the rate limiter) are done. The DB layer
-was verified against a real local Postgres + Redis in the original
-GitHub-only version; the auth rework (email+password/Google primary, GitHub
-optional) hasn't been re-run against a live DB yet — do that before calling
-it verified again. Next up: **Phase 2** — rebuild the chatbot as a LangGraph
-`StateGraph`, add the supervisor + Resume / Cover Letter / Interview Prep
-specialist agents (Cover Letter sequential after Resume, Interview Prep
-parallel), and cross-session checkpointing in Postgres.
+Phase 0, Phase 1, Phase 2, and Phase 3 (at a revised, smaller scope — see
+`docs/PHASE_3_PLAN.md`: GitHub ingestion and all of chunking/embeddings/
+vector-store/retrieval deferred together, since a single resume has no
+corpus large enough to need retrieval; what shipped is just `POST /resumes`
+/ `GET /resumes/active`) are done. Phase 1 (auth, Postgres schema,
+basic chat, cache-aside `/jobs`, rate limiter) is re-verified against a
+live Postgres/Redis including the email+password/Google rework. Phase 2
+(LangGraph) built two separate graphs: `app/graph/graph.py` for `/chat`,
+and `app/graph/prepare_graph.py` for the "Prepare" pipeline (resume-quality
+gate → Resume/Cover Letter sequential + Interview Prep's curriculum
+generation in parallel → reviewer critique-and-revise → a real
+human-in-the-loop `interrupt()` gate on the reviewer's proposal).
+Interview Prep's actual conversation is a third, separately-checkpointed
+graph (`app/graph/interview_graph.py`) — it's open-ended, so it can't join
+the Prepare pipeline's fan-in the way a one-shot task can. Three places
+the original roadmap wording didn't survive contact with the real design
+(no supervisor needed, what "parallel" actually means once Interview Prep
+got richer, where human-in-the-loop actually belongs) — full reasoning in
+`docs/PHASE_2_PLAN.md`. Next up: **Phase 4** — Job Worker: ingestion, Mongo,
+resilience, Saga.
 
 ## Running it locally
 

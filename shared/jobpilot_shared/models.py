@@ -59,9 +59,11 @@ class User(Base):
 
 
 class Resume(Base):
-    """A version of the user's resume/background. RAG (Phase 3) chunks and
-    embeds `content` into the vector store; this row is the source of truth
-    it was chunked from."""
+    """A version of the user's resume/background. Read directly (no
+    chunking/embedding) by the Resume Agent, the Cover Letter Agent, and
+    Interview Prep's gap analysis — a single resume is too small to justify
+    retrieval (see docs/PHASE_3_PLAN.md). Only `is_active=True` is ever
+    read; uploading a new one deactivates the previous one."""
 
     __tablename__ = "resumes"
 
@@ -109,6 +111,10 @@ class Application(Base):
     )
     resume_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_letter_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Interview Prep's study curriculum (Phase 2, chunk 5b) — real gaps
+    # between the candidate's profile resume and this JD, not the tailored
+    # per-job resume_output above.
+    interview_curriculum: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Optimistic-locking version check (design doc, resilience patterns) —
     # a concurrent status update must read this, then write it back +1 in

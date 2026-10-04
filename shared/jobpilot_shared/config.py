@@ -27,10 +27,12 @@ class Settings(BaseSettings):
 
     # LLM provider (managed-key mode; BYOK is a Phase 10 addition). Gemini
     # Flash — free tier — chosen to keep dev/learning cost at zero; swap
-    # LLM_MODEL if Google ships a newer Flash version.
-    llm_provider: str = "google"
+    # LLM_MODEL if Google ships a newer Flash version. llm_provider must be
+    # a LangChain init_chat_model provider key, not a friendly name —
+    # Gemini-via-AI-Studio is "google_genai", not "google".
+    llm_provider: str = "google_genai"
     llm_api_key: str = "changeme"
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.5-flash"
 
     # Rate limiting — sized to your actual provider RPM, not a guess
     llm_rate_limit_rpm: int = 60
@@ -63,6 +65,14 @@ class Settings(BaseSettings):
         built around async engines. Same database, a different driver for a
         different job: the app talks to Postgres async, migrations don't."""
         return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+
+    @property
+    def checkpointer_conninfo(self) -> str:
+        """A third form of the same Postgres URL: SQLAlchemy needs a dialect
+        prefix (postgresql+asyncpg://, postgresql+psycopg://), but psycopg's
+        own connection pool — used directly by LangGraph's checkpointer,
+        with no SQLAlchemy involved — takes a plain postgresql:// URL."""
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
 settings = Settings()

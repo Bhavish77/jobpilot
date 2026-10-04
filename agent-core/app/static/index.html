@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JobPilot — dev test harness</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: 1rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+  section { margin-bottom: 1.5rem; }
+  label { display: block; font-size: 0.85rem; margin-top: 0.5rem; }
+  input { width: 100%; padding: 0.4rem; box-sizing: border-box; margin-top: 0.15rem; }
+  button { margin-top: 0.7rem; padding: 0.5rem 1rem; cursor: pointer; }
+  a.button-link { display: inline-block; margin-top: 0.7rem; padding: 0.5rem 1rem; background: #eee; text-decoration: none; color: #1a1a1a; border-radius: 4px; }
+  #status { padding: 0.6rem; background: #f5f5f5; border-radius: 4px; font-size: 0.9rem; }
+  #status.logged-in { background: #e6f4ea; }
+  pre { background: #111; color: #0f0; padding: 0.8rem; overflow-x: auto; font-size: 0.8rem; border-radius: 4px; }
+  .row { display: flex; gap: 0.5rem; }
+  .row > * { flex: 1; }
+  small.note { color: #666; }
+</style>
+</head>
+<body>
+
+<h1>JobPilot — dev test harness</h1>
+<p><small class="note">
+  Not the real frontend (that's Phase 6, Next.js). This is a throwaway page,
+  served directly by agent-core, just to click through auth/chat/jobs
+  without typing curl commands.
+</small></p>
+
+<section>
+  <h2>Session status</h2>
+  <div id="status">checking…</div>
+  <button onclick="refreshStatus()">Refresh</button>
+  <button onclick="logout()">Log out</button>
+</section>
+
+<section>
+  <h2>Register (email + password)</h2>
+  <label>Email <input id="reg-email" type="email" value="test@example.com"></label>
+  <label>Password <input id="reg-password" type="password" value="correcthorsebattery"></label>
+  <label>Name (optional) <input id="reg-name" type="text"></label>
+  <button onclick="register()">Register</button>
+</section>
+
+<section>
+  <h2>Login (email + password)</h2>
+  <label>Email <input id="login-email" type="email" value="test@example.com"></label>
+  <label>Password <input id="login-password" type="password" value="correcthorsebattery"></label>
+  <button onclick="login()">Log in</button>
+</section>
+
+<section>
+  <h2>Google sign-in</h2>
+  <p><small class="note">Full-page redirect — this isn't a fetch() call, it's the real OAuth dance.</small></p>
+  <a class="button-link" href="/auth/google/login">Sign in with Google</a>
+</section>
+
+<section>
+  <h2>Connect GitHub (optional — requires being logged in first)</h2>
+  <p><small class="note">For Phase 3's RAG ingestion later — never required to use JobPilot.</small></p>
+  <a class="button-link" href="/auth/github/connect">Connect GitHub</a>
+</section>
+
+<section>
+  <h2>Resume</h2>
+  <p><small class="note">
+    Closes a gap that's existed since Phase 2 started — every test before
+    this needed a manual SQL insert. No RAG here (deferred — see
+    docs/PHASE_3_PLAN.md); uploading just replaces the active resume.
+  </small></p>
+  <label>Resume content
+    <textarea id="resume-content" rows="4" style="width:100%; box-sizing:border-box; margin-top:0.15rem;">Backend engineer with five years building distributed systems in Python and Go. Led migration of a monolithic service to microservices, cutting deployment time by sixty percent. Built real-time data pipelines processing millions of events daily using Kafka and Redis. Strong background in Postgres schema design, REST API design, and mentoring junior engineers.</textarea>
+  </label>
+  <button onclick="uploadResume()">Upload</button>
+  <button onclick="viewActiveResume()">View active resume</button>
+</section>
+
+<section>
+  <h2>Chat (Gemini, rate-limited)</h2>
+  <label>Message <input id="chat-message" type="text" value="Say hello in one sentence."></label>
+  <button onclick="sendChat()">Send</button>
+</section>
+
+<section>
+  <h2>Prepare (Resume + Cover Letter + Interview Curriculum)</h2>
+  <p><small class="note">
+    Needs an active resume first — use the Resume section above. Can take a
+    while — it's 3-4 LLM calls, some sequential, run synchronously (Phase 4
+    moves this to a background queue, not built yet either).
+  </small></p>
+  <label>Job posting ID <input id="prepare-job-id" type="text" value="dev-job-1"></label>
+  <label>Job description
+    <textarea id="prepare-job-desc" rows="3" style="width:100%; box-sizing:border-box; margin-top:0.15rem;">Senior Backend Engineer: needs 5+ years Python, distributed systems, and API design experience.</textarea>
+  </label>
+  <button onclick="runPrepare()">Run /prepare</button>
+  <div id="prepare-review" style="display:none; margin-top:0.7rem;">
+    <p><small class="note">
+      Paused for review — the full original vs. proposed resume/cover
+      letter is in the JSON below. Decide, then:
+    </small></p>
+    <button onclick="approvePrepare('accept')">Accept revision</button>
+    <button onclick="approvePrepare('reject')">Keep original</button>
+  </div>
+</section>
+
+<section>
+  <h2>Interview Prep (requires /prepare to have run first for this job)</h2>
+  <label>Job posting ID <input id="interview-job-id" type="text" value="dev-job-1"></label>
+  <label>Job description
+    <textarea id="interview-job-desc" rows="2" style="width:100%; box-sizing:border-box; margin-top:0.15rem;">Senior Backend Engineer: needs 5+ years Python, distributed systems, and API design experience.</textarea>
+  </label>
+  <label>Message <input id="interview-message" type="text" value="I'm ready to start."></label>
+  <button onclick="sendInterviewTurn()">Send</button>
+</section>
+
+<section>
+  <h2>Jobs (cache-aside — first call is a miss, refresh again for a hit)</h2>
+  <button onclick="loadJobs()">GET /jobs</button>
+</section>
+
+<h2>Last response</h2>
+<pre id="output">(nothing yet)</pre>
+
+<script>
+  const out = document.getElementById('output');
+
+  function show(label, data) {
+    out.textContent = `${label}\n\n` + JSON.stringify(data, null, 2);
+  }
+
+  async function call(path, options) {
+    const res = await fetch(path, { credentials: 'include', ...options });
+    let body;
+    try { body = await res.json(); } catch { body = await res.text(); }
+    show(`${options?.method || 'GET'} ${path} -> ${res.status}`, body);
+    return { status: res.status, body };
+  }
+
+  async function refreshStatus() {
+    const { status, body } = await call('/auth/me');
+    const el = document.getElementById('status');
+    if (status === 200) {
+      el.className = 'logged-in';
+      el.textContent = `Logged in as ${body.email} (google: ${body.google_linked}, github: ${body.github_linked})`;
+    } else {
+      el.className = '';
+      el.textContent = 'Not logged in';
+    }
+  }
+
+  async function register() {
+    await call('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('reg-email').value,
+        password: document.getElementById('reg-password').value,
+        name: document.getElementById('reg-name').value || null,
+      }),
+    });
+    refreshStatus();
+  }
+
+  async function login() {
+    await call('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('login-email').value,
+        password: document.getElementById('login-password').value,
+      }),
+    });
+    refreshStatus();
+  }
+
+  async function logout() {
+    await call('/auth/logout', { method: 'POST' });
+    refreshStatus();
+  }
+
+  async function uploadResume() {
+    await call('/resumes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: document.getElementById('resume-content').value }),
+    });
+  }
+
+  async function viewActiveResume() {
+    await call('/resumes/active');
+  }
+
+  async function sendChat() {
+    await call('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: document.getElementById('chat-message').value }),
+    });
+  }
+
+  async function loadJobs() {
+    await call('/jobs');
+  }
+
+  async function runPrepare() {
+    const jobId = document.getElementById('prepare-job-id').value;
+    const { body } = await call('/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_posting_id: jobId,
+        job_description: document.getElementById('prepare-job-desc').value,
+      }),
+    });
+    document.getElementById('prepare-review').style.display =
+      body && body.status === 'pending_review' ? 'block' : 'none';
+  }
+
+  async function approvePrepare(decision) {
+    const jobId = document.getElementById('prepare-job-id').value;
+    await call(`/prepare/${encodeURIComponent(jobId)}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision }),
+    });
+    document.getElementById('prepare-review').style.display = 'none';
+  }
+
+  async function sendInterviewTurn() {
+    await call('/interview/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_posting_id: document.getElementById('interview-job-id').value,
+        job_description: document.getElementById('interview-job-desc').value,
+        message: document.getElementById('interview-message').value,
+      }),
+    });
+  }
+
+  refreshStatus();
+</script>
+
+</body>
+</html>

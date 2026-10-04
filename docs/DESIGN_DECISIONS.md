@@ -114,12 +114,23 @@ tying up a web request/connection, and because resume/cover-letter/interview
 not a single call.
 
 **Ordering:** Resume → Cover Letter run **sequentially** (cover letter
-references what the resume emphasized). Interview Prep runs **in parallel**
-(only needs the JD + candidate background). Maps onto Celery primitives: a
-`chain(resume_task, cover_letter_task)` combined with a
-`group([interview_prep_task])`, wrapped in a `chord` for whatever should run
-after all three finish (mark "Ready to apply", fire the notification). See
-`shared/jobpilot_shared/tasks.py` for the Phase-1 placeholder shape of this.
+references what the resume emphasized). Interview Prep's curriculum
+generation runs **in parallel** (only needs the JD + candidate background).
+
+**Revised from the original Phase-1 sketch** (`shared/jobpilot_shared/tasks.py`
+still shows the old shape — needs updating when Phase 4 actually starts):
+the original plan was four separate Celery tasks coordinated by Celery's own
+`chain`/`group`/`chord`. Phase 2 instead built this exact ordering as a
+single LangGraph graph (`agent-core/app/graph/prepare_graph.py`) — the
+sequential/parallel structure already lives in the graph's edges. Re-
+describing the same structure a second time via Celery's own primitives
+would mean two systems independently claiming to own "what runs after
+what," with no single source of truth. The actual Phase 4 shape: **one**
+Celery task wraps the *entire* `prepare_graph.ainvoke(...)` call — Celery's
+job is moving that whole unit of work off the synchronous request path, not
+re-orchestrating its internals. The task's own body, after `ainvoke`
+returns, does what `mark_ready_to_apply` was meant to do (persist outputs,
+fire the Notify event) — not a separate chord-callback task.
 
 **Frontend updates:** polling and queuing are separate concerns. Hybrid: one
 GET on page load (so a refresh isn't blank) + a WebSocket connection (the
@@ -205,6 +216,20 @@ so they don't get silently re-proposed later:
   feature — Selenium-driven automated application *submission* — contradicts
   the prepare-only decision above and carries real ToS risk. Don't add it.
 
+## Interview Prep's curriculum stays guidance-only — not a teaching platform
+
+Interview Prep (Phase 2, chunk 5) compares the candidate's real profile
+resume against a JD, finds genuine gaps, and turns them into a study
+curriculum with suggested projects. Explicitly **not building**: a
+submission flow (user uploads project work), grading/feedback on submitted
+work, quizzes, or lesson tracking. That's the natural next step if this
+feature were fully scoped out, and it would turn JobPilot into a teaching
+platform — a different product. The curriculum is generated guidance text
+the user acts on entirely outside the app; JobPilot doesn't verify they did
+it. Revisit only if explicitly asked — noted here so it doesn't get
+silently re-proposed the way the Gmail-sync/analytics-dashboard ideas below
+did.
+
 ## Borrowed ideas from another OSS reference: `MadsLorentzen/ai-job-search`
 
 A Claude-Code-native job-search workflow (slash commands + skills, runs
@@ -239,11 +264,19 @@ get silently re-proposed just because a second project happens to have it.
 
 ## Status
 
-Phase 0 (mono-repo scaffold + docker-compose data layer) and Phase 1 (auth —
+Phase 0, Phase 1, and Phase 2 are built and verified. Phase 1 (auth —
 email+password + Google, GitHub as an optional connect-later flow — Postgres
 schema + Alembic migration, basic LangChain `/chat` gated by the rate
-limiter, cache-aside `/jobs`) are built. The original GitHub-only version of
-Phase 1 was verified against a real local Postgres + Redis; the auth rework
-above hasn't been re-run against a live DB yet. Next: **Phase 2** — LangGraph
-`StateGraph`, supervisor + three specialist agents (plus the
-drafter/reviewer critique step noted above), checkpointing in Postgres.
+limiter, cache-aside `/jobs`) is re-verified against a live Postgres/Redis,
+including the email+password/Google rework. Phase 2 built the LangGraph
+`StateGraph` for `/chat`, a separate `prepare_graph` (resume-quality gate →
+Resume/Cover Letter sequential + Interview Prep curriculum generation in
+parallel → reviewer critique-and-revise → human-in-the-loop `interrupt()`
+gate), and a third, separately-checkpointed graph for Interview Prep's
+actual conversation. Three roadmap items turned out not to mean what they
+originally said once built for real — no general supervisor was needed, the
+"parallel" framing only applies to curriculum generation (not Interview
+Prep's open-ended chat), and the human-in-the-loop gate lives on the
+reviewer's proposal, not on "finalizing" in general — full reasoning in
+`docs/PHASE_2_PLAN.md`. Next: **Phase 3** — RAG (resume + optional GitHub
+ingestion).
