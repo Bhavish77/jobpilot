@@ -21,7 +21,7 @@ from jobpilot_shared.models import Resume, User
 
 from app.applications import get_or_create_application
 from app.deps import get_current_user
-from app.graph.llm import RateLimitExceeded, extract_text
+from jobpilot_shared.graph.llm import RateLimitExceeded, extract_text
 
 router = APIRouter(prefix="/interview", tags=["interview"])
 
@@ -30,6 +30,34 @@ class InterviewTurnRequest(BaseModel):
     job_posting_id: str
     job_description: str
     message: str
+
+
+@router.get("/{job_posting_id}/history")
+async def interview_history(
+    job_posting_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Phase 6, chunk 0d: without this, reopening a Job Workspace's
+    Interview Prep tab always started blank even though the conversation
+    is genuinely still there — the checkpointer already persists the full
+    message list, nothing ever read it back. Same aget_state pattern
+    /prepare/status already established, applied to interview_graph
+    instead of prepare_graph."""
+    application = await get_or_create_application(session, user.id, job_posting_id)
+
+    graph = request.app.state.interview_graph
+    config = {"configurable": {"thread_id": f"{user.id}:{application.id}"}}
+    snapshot = await graph.aget_state(config)
+
+    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    return {
+        "messages": [
+            {"role": "user" if msg.type == "human" else "assistant", "content": extract_text(msg.content)}
+            for msg in messages
+        ]
+    }
 
 
 @router.post("/turn")

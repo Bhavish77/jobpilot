@@ -27,8 +27,8 @@ LLM call a second time for no reason.
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
-from app.graph.llm import call_llm, extract_text
-from app.graph.prepare_state import PrepareState
+from jobpilot_shared.graph.llm import call_llm, extract_text
+from jobpilot_shared.graph.prepare_state import PrepareState
 
 REVIEW_PROMPT = (
     "You are a critical reviewer checking a tailored resume and cover letter "

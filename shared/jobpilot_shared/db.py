@@ -25,3 +25,18 @@ async def ping() -> bool:
     async with engine.connect() as conn:
         await conn.exec_driver_sql("SELECT 1")
     return True
+
+
+async def dispose_engine() -> None:
+    """Call at the end of any asyncio.run()-wrapped Celery task that used
+    this engine/async_session (Phase 4, chunk 4 — found by a real crash,
+    not anticipated in advance). `engine` is created once at import time;
+    its connection pool binds to whichever event loop first uses it. Safe
+    for agent-core (uvicorn runs one event loop for the app's entire
+    life), but not for Celery tasks — each `asyncio.run()` call spins up
+    and tears down its own separate loop, so a connection left in the pool
+    from one task's loop breaks the next task that reuses it ("Task ...
+    got Future ... attached to a different loop"). Disposing the pool
+    before this loop closes forces the next task's new loop to open fresh
+    connections instead."""
+    await engine.dispose()

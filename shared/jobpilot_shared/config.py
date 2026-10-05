@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     # Rate limiting — sized to your actual provider RPM, not a guess
     llm_rate_limit_rpm: int = 60
 
+    # Separate axis from RPM entirely — a provider's free tier typically
+    # caps total calls per *day*, independent of how fast you're allowed
+    # to make them minute-to-minute. Found the hard way: a finished RPM
+    # bucket still wouldn't have stopped this, since Gemini's free tier
+    # rejected calls with "GenerateRequestsPerDayPerProjectPerModel-
+    # FreeTier, limit: 20" — a cap this number is meant to mirror, not
+    # something RPM has any relationship to.
+    llm_daily_quota: int = 20
+
     # Auth — Google is a primary login option alongside email+password.
     google_client_id: str = "changeme"
     google_client_secret: str = "changeme"

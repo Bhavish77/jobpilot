@@ -9,8 +9,8 @@ emphasized."
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.graph.llm import call_llm, extract_text
-from app.graph.prepare_state import PrepareState
+from jobpilot_shared.graph.llm import call_llm, extract_text
+from jobpilot_shared.graph.prepare_state import PrepareState
 
 COVER_LETTER_AGENT_PROMPT = (
     "You are a cover-letter-writing assistant. Given a candidate's tailored "

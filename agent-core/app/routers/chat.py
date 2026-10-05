@@ -17,8 +17,8 @@ from pydantic import BaseModel
 from jobpilot_shared.models import User
 
 from app.deps import get_current_user
-from app.graph.graph import graph
-from app.graph.llm import RateLimitExceeded, extract_text
+from jobpilot_shared.graph.graph import graph
+from jobpilot_shared.graph.llm import RateLimitExceeded, extract_text
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

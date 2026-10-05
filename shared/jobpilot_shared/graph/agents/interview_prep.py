@@ -14,8 +14,8 @@ guidance-only."
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.graph.llm import call_llm, extract_text
-from app.graph.interview_state import InterviewState
+from jobpilot_shared.graph.llm import call_llm, extract_text
+from jobpilot_shared.graph.interview_state import InterviewState
 
 CURRICULUM_PROMPT = (
     "You are a technical interview coach. Compare the candidate's real "

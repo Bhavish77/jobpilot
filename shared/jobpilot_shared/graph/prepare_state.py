@@ -35,6 +35,12 @@ class PrepareState(TypedDict):
     proposed_resume: str
     proposed_cover_letter: str
 
+    # Set by compile_and_fit_resume (Phase 4, chunk 6) — the PDF
+    # compile/overflow/ATS-text verification result, after resume_output
+    # has possibly been cut down to fit one page. Metadata only (not
+    # re-parsed by any later step); kept so /status can surface it.
+    pdf_check: dict
+
     # Coarse progress marker, useful for tests/debugging until real agent
     # output fields (resume_output, cover_letter_output, ...) land in later
     # chunks.

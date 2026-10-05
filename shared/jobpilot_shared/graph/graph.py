@@ -10,7 +10,7 @@ node's shape.
 from langchain_core.messages import SystemMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from app.graph.llm import call_llm
+from jobpilot_shared.graph.llm import call_llm
 
 SYSTEM_PROMPT = (
     "You are JobPilot's assistant. You help the user with their job search — "

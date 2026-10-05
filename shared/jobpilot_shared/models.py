@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -77,6 +77,43 @@ class Resume(Base):
     user: Mapped["User"] = relationship(back_populates="resumes")
 
 
+class JobPosting(Base):
+    """A real job posting ingested from a public job board (Phase 4) —
+    replaces jobs.py's mock data. One row per (source, external_id); a
+    daily re-run upserts on that pair rather than duplicating rows, since
+    postings persist across days until the listing expires or disappears.
+
+    Deliberately no per-user match score here — scoring a posting against
+    a *specific* user's resume needs that user's resume, which doesn't
+    exist during a scheduled bulk ingestion run with no user in the loop.
+    That's a query-time concern (whenever /jobs is actually called by a
+    logged-in user), not something ingestion can meaningfully compute.
+    """
+
+    __tablename__ = "job_postings"
+    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_job_source_external_id"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    source: Mapped[str] = mapped_column(String(32), index=True)  # "remoteok" | "arbeitnow"
+    external_id: Mapped[str] = mapped_column(String(255))  # the source's own id/slug for this posting
+
+    title: Mapped[str] = mapped_column(String(512))
+    company: Mapped[str] = mapped_column(String(255))
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_remote: Mapped[bool] = mapped_column(default=False)
+    url: Mapped[str] = mapped_column(String(1024))
+    description: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    salary_min: Mapped[int | None] = mapped_column(nullable=True)
+    salary_max: Mapped[int | None] = mapped_column(nullable=True)
+
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ApplicationStatus(str, enum.Enum):
     """Mirrors the Pipeline board columns in the UI mockup exactly —
     Discover has nothing to do with this table; a row only exists here once
@@ -120,6 +157,14 @@ class Application(Base):
     # a concurrent status update must read this, then write it back +1 in
     # the same WHERE clause, or the update is rejected as stale.
     version: Mapped[int] = mapped_column(default=1)
+
+    # Phase 6 polish: the Celery task_id from the most recent /prepare
+    # call. Without this, /prepare/status had no way to distinguish "the
+    # pipeline is still genuinely running" from "the task died and
+    # nothing will ever finish this" — a checkpoint stuck mid-pipeline
+    # looks identical either way unless something checks the task's own
+    # Celery result state, which needs the task_id to look up.
+    last_prepare_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

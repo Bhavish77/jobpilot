@@ -30,17 +30,25 @@ interview.py did) under-counts here: prepare_graph makes 3-4 real calls
 per run, not one, so one permit check per request would only ever account
 for a quarter of the actual usage. Enforcing it inside the shared call
 site, used by every node, is the only way it can't be forgotten again.
+
+Two gates now, not one (see redis_client.py's module docstring for why
+RPM and daily-quota are genuinely different axes) — checked RPM first,
+daily quota second, deliberately in that order: RPM tokens refill on
+their own, so "wasting" one on a call that then gets blocked by the
+daily cap is cheap and self-healing. A daily-quota slot is the opposite
+— precious and irreplaceable until tomorrow — so it's only ever spent
+once we already know the call is otherwise about to actually happen.
 """
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel, BaseMessage
 
 from jobpilot_shared.config import settings
-from jobpilot_shared.redis_client import acquire_llm_permit
+from jobpilot_shared.redis_client import acquire_daily_quota, acquire_llm_permit
 
 
 class RateLimitExceeded(Exception):
-    """Raised when the shared Redis token bucket has no permits left."""
+    """Raised when either the RPM bucket or the daily quota has nothing left."""
 
 
 def get_llm() -> BaseChatModel:
@@ -48,9 +56,12 @@ def get_llm() -> BaseChatModel:
 
 
 async def call_llm(messages: list) -> BaseMessage:
-    permitted = await acquire_llm_permit()
-    if not permitted:
+    if not await acquire_llm_permit():
         raise RateLimitExceeded("LLM rate limit reached — try again shortly.")
+    if not await acquire_daily_quota():
+        raise RateLimitExceeded(
+            f"Daily LLM quota ({settings.llm_daily_quota} calls) reached for today — resets tomorrow (UTC)."
+        )
     return await get_llm().ainvoke(messages)
 
 

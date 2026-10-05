@@ -117,20 +117,26 @@ not a single call.
 references what the resume emphasized). Interview Prep's curriculum
 generation runs **in parallel** (only needs the JD + candidate background).
 
-**Revised from the original Phase-1 sketch** (`shared/jobpilot_shared/tasks.py`
-still shows the old shape — needs updating when Phase 4 actually starts):
-the original plan was four separate Celery tasks coordinated by Celery's own
-`chain`/`group`/`chord`. Phase 2 instead built this exact ordering as a
-single LangGraph graph (`agent-core/app/graph/prepare_graph.py`) — the
-sequential/parallel structure already lives in the graph's edges. Re-
-describing the same structure a second time via Celery's own primitives
-would mean two systems independently claiming to own "what runs after
-what," with no single source of truth. The actual Phase 4 shape: **one**
-Celery task wraps the *entire* `prepare_graph.ainvoke(...)` call — Celery's
-job is moving that whole unit of work off the synchronous request path, not
-re-orchestrating its internals. The task's own body, after `ainvoke`
-returns, does what `mark_ready_to_apply` was meant to do (persist outputs,
-fire the Notify event) — not a separate chord-callback task.
+**Revised from the original Phase-1 sketch** (the original
+`shared/jobpilot_shared/tasks.py` placeholder — four separate Celery tasks
+coordinated by Celery's own `chain`/`group`/`chord` — was deleted in
+Phase 4, chunk 5, once it was fully superseded): Phase 2 instead built this
+exact ordering as a single LangGraph graph
+(`shared/jobpilot_shared/graph/prepare_graph.py`, moved there from
+`agent-core/app/graph/` in Phase 4, chunk 4, so `job-worker` can import it
+too) — the sequential/parallel structure already lives in the graph's
+edges. Re-describing the same structure a second time via Celery's own
+primitives would mean two systems independently claiming to own "what runs
+after what," with no single source of truth. The actual Phase 4 shape
+(built, not just planned): **one** Celery task
+(`shared/jobpilot_shared/prepare_tasks.py`) wraps the *entire*
+`prepare_graph.ainvoke(...)` call — Celery's job is moving that whole unit
+of work off the synchronous request path, not re-orchestrating its
+internals. The task's own body, after `ainvoke` returns, does what
+`mark_ready_to_apply` was meant to do (persists outputs and flips
+`Application.status` to `READY_TO_APPLY`) — not a separate chord-callback
+task. Firing a Notify event on top of that is still open — Notify itself
+doesn't exist yet (Phase 5).
 
 **Frontend updates:** polling and queuing are separate concerns. Hybrid: one
 GET on page load (so a refresh isn't blank) + a WebSocket connection (the

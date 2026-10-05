@@ -43,24 +43,36 @@ the whole graph from START, re-paying for already-finished LLM calls.
 routes straight to whichever step hasn't completed yet, for each branch
 independently, instead of always fanning out to draft_resume +
 generate_curriculum unconditionally.
+
+Phase 4, chunk 6: `compile_and_fit_resume` runs after await_review_approval,
+on the Resume->Cover Letter branch only (same scoping as the reviewer —
+generate_curriculum's parallel branch never touches this). Deterministic
+PDF compile/overflow/ATS-text verification + relevance-weighted cutting
+(jobpilot_shared/resume_pdf.py) — no LLM call, so no new rate-limiting or
+fabrication-guardrail concerns, just another "don't trust it worked just
+because a step returned" gate, same spirit as the quality gate.
 """
 
 from langgraph.graph import END, START, StateGraph
 
-from app.graph.agents.cover_letter import draft_cover_letter
-from app.graph.agents.interview_prep import generate_curriculum
-from app.graph.agents.resume import draft_resume
-from app.graph.agents.reviewer import await_review_approval, review_and_revise
-from app.graph.prepare_state import PrepareState
+from jobpilot_shared.graph.agents.cover_letter import draft_cover_letter
+from jobpilot_shared.graph.agents.interview_prep import generate_curriculum
+from jobpilot_shared.graph.agents.resume import draft_resume
+from jobpilot_shared.graph.agents.reviewer import await_review_approval, review_and_revise
+from jobpilot_shared.graph.prepare_state import PrepareState
+from jobpilot_shared.resume_pdf import fit_resume_to_page, verify_ats_text
 
 MIN_RESUME_WORDS = 50
 
-# Statuses meaning the Resume->Cover Letter->Review branch has already
-# fully resolved — set only by await_review_approval (after a real
-# decision) or by review_and_revise finding nothing to propose. Retrying
-# past this point would re-trigger an interrupt for a decision that's
-# already been made.
-_RESUME_BRANCH_DONE_STATUSES = {"reviewed_accepted", "reviewed_kept_original", "review_parse_failed"}
+# Statuses meaning review has resolved (accepted/kept-original/nothing-to-
+# propose) but compile_and_fit_resume hasn't run yet — retrying from here
+# should skip straight to that node, not re-trigger an already-made
+# interrupt decision.
+_RESUME_BRANCH_REVIEW_DONE_STATUSES = {"reviewed_accepted", "reviewed_kept_original", "review_parse_failed"}
+
+# Status meaning the Resume->Cover Letter branch has *fully* resolved,
+# PDF compile/fit included — nothing left to do on retry.
+_RESUME_BRANCH_FULLY_DONE_STATUSES = {"resume_finalized"}
 
 
 async def check_resume_quality(state: PrepareState) -> dict:
@@ -78,17 +90,38 @@ async def check_resume_quality(state: PrepareState) -> dict:
     return {"quality_ok": True, "status": "quality_check_passed"}
 
 
+async def compile_and_fit_resume(state: PrepareState) -> dict:
+    """Deterministic, no LLM call: compile resume_output to a PDF, cut the
+    lowest-JD-relevance bullet and recompile if it overflows one page, then
+    verify the final PDF's text layer the way an ATS parser would. Always
+    overwrites resume_output with whatever the loop converged on (even if
+    nothing was cut) so every later read of resume_output — /status, the
+    Application row, a future render — reflects the exact text this check
+    actually ran against."""
+    result = fit_resume_to_page(
+        state["resume_output"], state["job_description"], state.get("cover_letter_output", "")
+    )
+    ats_check = verify_ats_text(result["pdf_bytes"], state["job_description"])
+    return {
+        "resume_output": result["resume_text"],
+        "status": "resume_finalized",
+        "pdf_check": {**ats_check, "page_fit": result["fit"], "cut_attempts": result["attempts"]},
+    }
+
+
 def _route_after_quality_check(state: PrepareState) -> list[str] | str:
     if not state["quality_ok"]:
         return END
 
     next_steps = []
 
-    # Resume -> Cover Letter -> Review chain: resume from wherever an
-    # earlier attempt (if any) left off, rather than redoing completed,
-    # expensive LLM calls on every retry.
-    if state.get("status") in _RESUME_BRANCH_DONE_STATUSES:
+    # Resume -> Cover Letter -> Review -> PDF-fit chain: resume from
+    # wherever an earlier attempt (if any) left off, rather than redoing
+    # completed, expensive LLM calls on every retry.
+    if state.get("status") in _RESUME_BRANCH_FULLY_DONE_STATUSES:
         pass  # nothing left to do on this branch
+    elif state.get("status") in _RESUME_BRANCH_REVIEW_DONE_STATUSES:
+        next_steps.append("compile_and_fit_resume")
     elif not state.get("resume_output"):
         next_steps.append("draft_resume")
     elif not state.get("cover_letter_output"):
@@ -111,6 +144,7 @@ builder.add_node("draft_resume", draft_resume)
 builder.add_node("draft_cover_letter", draft_cover_letter)
 builder.add_node("review_and_revise", review_and_revise)
 builder.add_node("await_review_approval", await_review_approval)
+builder.add_node("compile_and_fit_resume", compile_and_fit_resume)
 builder.add_node("generate_curriculum", generate_curriculum)
 
 builder.add_edge(START, "check_resume_quality")
@@ -118,5 +152,6 @@ builder.add_conditional_edges("check_resume_quality", _route_after_quality_check
 builder.add_edge("draft_resume", "draft_cover_letter")
 builder.add_edge("draft_cover_letter", "review_and_revise")
 builder.add_edge("review_and_revise", "await_review_approval")
-builder.add_edge("await_review_approval", END)
+builder.add_edge("await_review_approval", "compile_and_fit_resume")
+builder.add_edge("compile_and_fit_resume", END)
 builder.add_edge("generate_curriculum", END)

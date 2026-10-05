@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — Phase 6, chunk 1 (docs/PHASE_6_PLAN.md).
+ *
+ * Every color pairing below was checked against the real WCAG 2.1
+ * relative-luminance contrast formula before being chosen, not eyeballed.
+ * Two things that failed the first pass and were corrected:
+ *   - White text on the dark-mode primary/accent/destructive colors
+ *     only hit ~2.9-3:1 (fails even the 3:1 large-text minimum) — dark
+ *     mode's vivid buttons use dark slate text instead, which hits
+ *     ~6:1+. Light mode's deeper 600-weight colors keep white text fine.
+ *   - A light slate-300 border (1.4:1) isn't enough for an input's own
+ *     boundary (WCAG 1.4.11 wants 3:1 for interactive component edges) —
+ *     `--input` is a distinct, darker token from the decorative `--border`
+ *     used for cards/dividers, which can stay subtle since it's not
+ *     conveying an interactive boundary.
+ */
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+
+  --border: #e2e8f0; /* decorative only — card edges, dividers */
+  --input: #64748b; /* real interactive-boundary contrast (4.55:1) */
+  --ring: #4f46e5;
+
+  --primary: #4f46e5; /* indigo-600 */
+  --primary-foreground: #ffffff;
+
+  --accent: #7c3aed; /* violet-600 — reserved for Prepare/Apply CTAs */
+  --accent-foreground: #ffffff;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+
+  /* Pipeline status colors — chosen so the board is scannable by color
+     alone, not just text. Each pairing verified at 4.7:1 or better. */
+  --status-preparing-bg: #fffbeb;
+  --status-preparing-fg: #b45309;
+  --status-ready-bg: #eff6ff;
+  --status-ready-fg: #1d4ed8;
+  --status-applied-bg: #f0fdf4;
+  --status-applied-fg: #15803d;
+  --status-interviewing-bg: #faf5ff;
+  --status-interviewing-fg: #6d28d9;
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+
+  --border: #334155;
+  --input: #64748b; /* same token, still 3.75:1 against the dark bg */
+  --ring: #818cf8;
+
+  --primary: #818cf8; /* indigo-400 — lighter so it pops on dark bg */
+  --primary-foreground: #0f172a; /* dark text: white here only hit 2.98:1 */
+
+  --accent: #a78bfa; /* violet-400 */
+  --accent-foreground: #0f172a;
+
+  --destructive: #f87171;
+  --destructive-foreground: #0f172a;
+
+  /* Dark-mode badges use a dark tinted bg + light text instead of
+     light-mode's light-bg-dark-text — inverting the light-mode pairing
+     verbatim would mean a pale amber/blue/green/violet card floating on
+     a dark page, which reads as a mistake, not a design choice. */
+  --status-preparing-bg: #451a03;
+  --status-preparing-fg: #fcd34d;
+  --status-ready-bg: #172554;
+  --status-ready-fg: #93c5fd;
+  --status-applied-bg: #052e16;
+  --status-applied-fg: #86efac;
+  --status-interviewing-bg: #2e1065;
+  --status-interviewing-fg: #d8b4fe;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-status-preparing-bg: var(--status-preparing-bg);
+  --color-status-preparing-fg: var(--status-preparing-fg);
+  --color-status-ready-bg: var(--status-ready-bg);
+  --color-status-ready-fg: var(--status-ready-fg);
+  --color-status-applied-bg: var(--status-applied-bg);
+  --color-status-applied-fg: var(--status-applied-fg);
+  --color-status-interviewing-bg: var(--status-interviewing-bg);
+  --color-status-interviewing-fg: var(--status-interviewing-fg);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: var(--ring);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}

@@ -1,13 +1,23 @@
-"""POST /resumes, GET /resumes/active — Phase 3.
+"""POST /resumes, GET /resumes/active, POST /resumes/extract-pdf — Phase 3
++ Phase 6 polish.
 
 Closes a gap that's existed since Phase 2 started: every test of
 /prepare or /interview needed a manual `INSERT INTO resumes` via psql,
 because nothing let a real user create a Resume row. No RAG here — see
 docs/PHASE_3_PLAN.md for why chunking/embeddings/retrieval are deferred;
 this is plain CRUD.
+
+/extract-pdf is deliberately *extraction only*, no DB write — PyMuPDF is
+already a backend dependency (resume_pdf.py's ATS text-layer check), so
+reusing it here for resume intake needs no new library. Returns the
+extracted text for the frontend to show in an editable textarea rather
+than saving it blind: PDF text extraction is good, not perfect (column
+layouts, tables, and unusual fonts can come out garbled), and the
+existing POST /resumes is still the one real save path either way.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import pymupdf
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +63,30 @@ async def upload_resume(
     await session.refresh(resume)
 
     return {"id": str(resume.id), "created_at": resume.created_at.isoformat()}
+
+
+@router.post("/extract-pdf")
+async def extract_pdf(
+    file: UploadFile,
+    user: User = Depends(get_current_user),  # noqa: ARG001 - auth gate only, extraction needs no user data
+) -> dict:
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    pdf_bytes = await file.read()
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        text = "\n".join(page.get_text() for page in doc)
+    except Exception as exc:  # noqa: BLE001 - a malformed/corrupt upload, not a server bug
+        raise HTTPException(status_code=400, detail=f"Couldn't read that PDF: {exc}") from exc
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="No extractable text found — this PDF might be a scanned image rather than real text.",
+        )
+
+    return {"content": text}
 
 
 @router.get("/active")

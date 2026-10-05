@@ -13,8 +13,8 @@ the checkpointer attached once that's available at startup.
 
 from langgraph.graph import END, START, StateGraph
 
-from app.graph.agents.interview_prep import interview_turn
-from app.graph.interview_state import InterviewState
+from jobpilot_shared.graph.agents.interview_prep import interview_turn
+from jobpilot_shared.graph.interview_state import InterviewState
 
 builder = StateGraph(InterviewState)
 builder.add_node("interview_turn", interview_turn)

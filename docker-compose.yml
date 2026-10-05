@@ -96,6 +96,21 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  job-worker-beat:
+    build:
+      context: .
+      dockerfile: job-worker/Dockerfile
+    container_name: jobpilot-job-worker-beat
+    <<: *app-env
+    # Beat only *schedules* — it enqueues jobpilot.ingest_jobs onto the same
+    # queue job-worker consumes, it never runs task code itself. Separate
+    # process/container so a Beat crash can't take down real task execution,
+    # and vice versa.
+    command: celery -A worker.celery_app beat --loglevel=info
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
   notify:
     build:
       context: ./notify

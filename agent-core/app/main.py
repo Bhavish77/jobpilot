@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.rows import dict_row
@@ -19,9 +20,9 @@ from psycopg_pool import AsyncConnectionPool
 from jobpilot_shared import db, mongo, redis_client
 from jobpilot_shared.config import settings
 
-from app.graph.interview_graph import builder as interview_graph_builder
-from app.graph.prepare_graph import builder as prepare_graph_builder
-from app.routers import auth, chat, interview, jobs, prepare, resumes
+from jobpilot_shared.graph.interview_graph import builder as interview_graph_builder
+from jobpilot_shared.graph.prepare_graph import builder as prepare_graph_builder
+from app.routers import applications, auth, chat, interview, jobs, prepare, resumes
 
 
 @asynccontextmanager
@@ -53,12 +54,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JobPilot Agent Core", lifespan=lifespan)
 
+# Phase 6: the frontend is a separate origin (:3000 vs :8000) and every
+# request needs the session cookie, so this must be the real origin, not
+# "*" — browsers refuse "*" + credentials together regardless.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_url],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(jobs.router)
 app.include_router(prepare.router)
 app.include_router(interview.router)
 app.include_router(resumes.router)
+app.include_router(applications.router)
 
 # Dev-only test harness (click-through auth/chat/jobs without curl) — NOT
 # Phase 6's real frontend, which is a separate Next.js app on its own origin
