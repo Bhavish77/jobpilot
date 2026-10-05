@@ -477,3 +477,25 @@ reality for the remainder of today (`SET` to the limit) to stop burning
 further real attempts; from tomorrow's fresh UTC day onward it starts in
 sync and will correctly fast-fail locally, with no round trip to the
 provider needed.
+
+## The missing other half of chunk 6's ATS loop (user caught this one too)
+
+Real gap, found by actually using the app: the Resume tab just rendered
+`resume_output` as plain text — chunk 6's whole PDF compile/verify/cut
+loop runs server-side, but nothing ever kept or exposed the PDF bytes
+themselves, so there was no way to actually get a PDF resume file out of
+the app. The verification was real; the deliverable to the user wasn't.
+
+Fixed with the smallest possible addition: `GET
+/prepare/{job_posting_id}/resume.pdf` calls the exact same
+`compile_resume_pdf()` chunk 6 already built, on demand, against
+`Application.resume_output` — re-rendering from the text the verification
+loop already confirmed fits one page and reads correctly to an ATS, not
+re-running or re-verifying anything. A `Download PDF` button on the
+Job Workspace's Resume tab links straight to it (a plain `<a href>`, same
+cross-origin-cookie pattern already proven for the Google OAuth link).
+
+**Verified for real**: downloaded the actual PDF for a real finished
+application, confirmed the raw bytes start with a genuine `%PDF-1.7`
+header (not text mislabeled as a PDF), and confirmed via PyMuPDF that the
+file opens as a real 1-page PDF with the correct resume content inside.

@@ -33,7 +33,7 @@ import re
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from langgraph.types import Command
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -43,6 +43,7 @@ from jobpilot_shared.db import get_session
 from jobpilot_shared.models import ApplicationStatus, JobPosting, User
 from jobpilot_shared.prepare_tasks import run_prepare_pipeline
 from jobpilot_shared.redis_client import publish_event
+from jobpilot_shared.resume_pdf import compile_resume_pdf
 
 from app.applications import get_or_create_application
 from app.deps import get_current_user
@@ -279,3 +280,31 @@ async def approve(
     )
 
     return {**_result_payload(final_state), "steps": _compute_steps(final_state)}
+
+
+@router.get("/{job_posting_id}/resume.pdf")
+async def download_resume_pdf(
+    job_posting_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """The missing other half of chunk 6's ATS-verification loop: that
+    loop compiles a real PDF, checks it, and cuts content if needed — but
+    only ever kept the resulting *text* (Application.resume_output),
+    never the PDF bytes themselves (deliberate at the time — no storage
+    needed for a pure function of already-saved text). Nothing ever
+    exposed that function to a user who actually wants a PDF file, which
+    for a resume tool is the whole point. Fixed by just calling the same
+    compile_resume_pdf() on demand here, re-rendering from the exact text
+    the verification loop already confirmed fits one page and reads
+    correctly to an ATS — not regenerating or re-verifying anything."""
+    application = await get_or_create_application(session, user.id, job_posting_id)
+    if not application.resume_output:
+        raise HTTPException(status_code=404, detail="No tailored resume ready for this job yet.")
+
+    pdf_bytes = compile_resume_pdf(application.resume_output)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="resume.pdf"'},
+    )

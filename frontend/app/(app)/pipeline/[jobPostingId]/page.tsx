@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, FileDown, Send } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -19,6 +19,8 @@ import {
   type InterviewMessage,
   type PrepareStatus,
 } from "@/lib/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const ACTIVE_STATUSES = new Set(["not_started", "in_progress"]);
 
@@ -188,8 +190,14 @@ export default function JobWorkspacePage() {
 
           <TabsContent value="resume">
             <Card>
-              <CardContent className="whitespace-pre-wrap py-6 text-sm">
-                {prepareStatus.resume_output}
+              <CardContent className="space-y-4 py-6">
+                <Button variant="outline" size="sm" asChild>
+                  <a href={`${API_URL}/prepare/${encodeURIComponent(jobPostingId)}/resume.pdf`}>
+                    <FileDown className="size-4" />
+                    Download PDF
+                  </a>
+                </Button>
+                <p className="whitespace-pre-wrap text-sm">{prepareStatus.resume_output}</p>
               </CardContent>
             </Card>
           </TabsContent>
